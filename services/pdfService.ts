@@ -205,7 +205,7 @@ export const generatePDF = async (
     doc.setFont('helvetica', 'normal');
     doc.text(expiryVal, pageWidth - margin, 43, { align: 'right' });
 
-    const vendorVal = metadata.vendor || '---';
+    const vendorVal = metadata.vendor || 'N/A';
     doc.setFont('helvetica', 'bold');
     doc.text('Vendedor: ', pageWidth - margin - doc.getTextWidth(vendorVal), 48, { align: 'right' });
     doc.setFont('helvetica', 'normal');

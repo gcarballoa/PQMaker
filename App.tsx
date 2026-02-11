@@ -4,7 +4,8 @@ import {
   Plus, Trash2, FileText, Download, Building2, User, Settings2, Share2, 
   Calendar, FileDigit, Image as ImageIcon, Gavel, CreditCard, RefreshCcw,
   ChevronDown, ChevronUp, AlertCircle, LogOut, Lock, User as UserIcon,
-  Users, ShieldCheck, UserPlus
+  Users, ShieldCheck, UserPlus, Upload, FileSpreadsheet, Info, Save, Check,
+  FilePlus, Eraser
 } from 'lucide-react';
 import { ClientData, BudgetItem, BudgetConfig, CompanyData, DocumentMetadata, OfferConditions } from './types';
 import { COMPANY_CONFIG, FOOTER_CONFIG } from './constants';
@@ -54,15 +55,44 @@ const App: React.FC = () => {
 
   // Refs for focus management
   const addItemBtnRef = useRef<HTMLButtonElement>(null);
+  const csvInputRef = useRef<HTMLInputElement>(null);
 
   // UI States for collapsible sections
   const [isIssuerExpanded, setIsIssuerExpanded] = useState(true);
   const [isDocMetadataExpanded, setIsDocMetadataExpanded] = useState(true);
   const [isClientExpanded, setIsClientExpanded] = useState(true);
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saved'>('idle');
 
-  // Issuer State
-  const [issuer, setIssuer] = useState<CompanyData>({ ...COMPANY_CONFIG });
-  
+  // Issuer State - Associated with current user
+  const [issuer, setIssuer] = useState<CompanyData>(() => {
+    if (currentUser) {
+      const savedIssuer = localStorage.getItem(`pqmaker_issuer_${currentUser.username}`);
+      return savedIssuer ? JSON.parse(savedIssuer) : { ...COMPANY_CONFIG };
+    }
+    return { ...COMPANY_CONFIG };
+  });
+
+  // Effect to load user-specific issuer data when user changes (login/logout/refresh)
+  useEffect(() => {
+    if (currentUser) {
+      const savedIssuer = localStorage.getItem(`pqmaker_issuer_${currentUser.username}`);
+      if (savedIssuer) {
+        setIssuer(JSON.parse(savedIssuer));
+      } else {
+        setIssuer({ ...COMPANY_CONFIG });
+      }
+    }
+  }, [currentUser?.username]); // Only depend on username to prevent unnecessary loads
+
+  // Manual save handler for issuer data - This is the primary persistence method
+  const handleSaveIssuer = () => {
+    if (currentUser && issuer) {
+      localStorage.setItem(`pqmaker_issuer_${currentUser.username}`, JSON.stringify(issuer));
+      setSaveStatus('saved');
+      setTimeout(() => setSaveStatus('idle'), 2000);
+    }
+  };
+
   // Offer Conditions State
   const [offerConditions, setOfferConditions] = useState<OfferConditions>({
     validezDias: 30,
@@ -123,6 +153,66 @@ const App: React.FC = () => {
     if (!email) return true;
     const emailRegex = /^[^@]+@[^@]+\.[^@]+$/;
     return emailRegex.test(email);
+  };
+
+  // CSV Upload Handler
+  const handleCsvUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result as string;
+      const lines = text.split('\n');
+      if (lines.length < 2) {
+        alert("El archivo CSV debe contener al menos una fila de encabezado y una de datos.");
+        return;
+      }
+
+      const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+      const values = lines[1].split(',').map(v => v.trim());
+
+      const newData = { ...issuer };
+      
+      const mapping: Record<string, keyof CompanyData> = {
+        'nombre': 'name',
+        'name': 'name',
+        'direccion': 'address',
+        'address': 'address',
+        'telefono': 'phone',
+        'phone': 'phone',
+        'correo': 'email',
+        'email': 'email',
+        'web': 'website',
+        'website': 'website',
+        'cedula': 'idNumber',
+        'idnumber': 'idNumber',
+        'whatsapp': 'whatsapp',
+        'sinpe': 'sinpe',
+        'iban': 'iban',
+        'banco': 'bank',
+        'bank': 'bank'
+      };
+
+      headers.forEach((header, index) => {
+        const field = mapping[header];
+        if (field && values[index]) {
+          // Special formatting for specific fields
+          if (field === 'phone' || field === 'whatsapp' || field === 'sinpe') {
+            (newData as any)[field] = formatPhone(values[index]);
+          } else if (field === 'iban') {
+            (newData as any)[field] = formatIBAN(values[index]);
+          } else {
+            (newData as any)[field] = values[index];
+          }
+        }
+      });
+
+      setIssuer(newData);
+      alert("Información de la empresa cargada exitosamente. No olvide hacer clic en 'GUARDAR DATOS' para que persistan en su perfil.");
+      if (csvInputRef.current) csvInputRef.current.value = '';
+    };
+    reader.readAsText(file);
   };
 
   // Login Handler
@@ -229,6 +319,40 @@ const App: React.FC = () => {
 
   const updateItem = (id: string, field: keyof BudgetItem, value: any) => {
     setItems(items.map(item => item.id === id ? { ...item, [field]: value } : item));
+  };
+
+  // Clear Budget Logic
+  const handleClearBudget = () => {
+    if (window.confirm("¿Está seguro de que desea limpiar el presupuesto actual? Se borrarán todos los datos del cliente, documento e ítems.")) {
+      // Reset Doc Metadata
+      const today = new Date();
+      const expiry = new Date();
+      expiry.setDate(today.getDate() + 30);
+      setDocMetadata({
+        proformaNumber: '',
+        date: today.toISOString().split('T')[0],
+        expiryDate: expiry.toISOString().split('T')[0],
+        vendor: ''
+      });
+
+      // Reset Client
+      setClient({
+        companyName: '',
+        companyPhone: '',
+        companyEmail: '',
+        contactName: '',
+        contactPhone: '',
+        contactEmail: ''
+      });
+
+      // Reset Items
+      setItems([{ id: crypto.randomUUID(), code: '', quantity: '', description: '', unitPrice: '' }]);
+
+      // Reset Discount only
+      setConfig(prev => ({ ...prev, discountPercent: '' }));
+      
+      alert("Presupuesto limpiado. Puede iniciar una nueva proforma.");
+    }
   };
 
   const rate = Number(config.exchangeRate) || 1;
@@ -388,7 +512,14 @@ const App: React.FC = () => {
       </header>
 
       <main className="container mx-auto px-4 max-w-5xl space-y-8">
-        <div className="sticky top-4 z-20 flex justify-end mb-4">
+        <div className="sticky top-4 z-20 flex justify-end mb-4 gap-3">
+          <button
+            onClick={handleClearBudget}
+            className="flex items-center justify-center gap-2 px-6 py-4 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700 rounded-xl font-bold hover:bg-gray-50 dark:hover:bg-gray-700 transition-all shadow-md active:scale-95"
+          >
+            <RefreshCcw size={20} />
+            LIMPIAR DATOS
+          </button>
           <button
             onClick={handleGeneratePDF}
             disabled={isGenerating || !isFormValid}
@@ -507,19 +638,57 @@ const App: React.FC = () => {
           </section>
         )}
 
-        {/* Existing Sections Updated */}
+        {/* Issuer Data Section */}
         <section className="bg-white dark:bg-gray-900 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-gray-800 overflow-hidden">
           <div className="flex items-center justify-between gap-2 mb-4 border-b dark:border-gray-800 pb-4">
             <div className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400">
               <Building2 size={20} />
               <h2 className="text-lg font-semibold uppercase tracking-tight">Datos de Mi Empresa (Emisor)</h2>
             </div>
-            <button 
-              onClick={() => setIsIssuerExpanded(!isIssuerExpanded)}
-              className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-gray-400 dark:text-gray-500"
-            >
-              {isIssuerExpanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
-            </button>
+            <div className="flex items-center gap-2">
+              <button 
+                onClick={handleSaveIssuer}
+                className={`flex items-center gap-2 px-3 py-1.5 text-xs font-black rounded-lg border transition-all ${
+                  saveStatus === 'saved' 
+                    ? 'bg-emerald-500 text-white border-emerald-400' 
+                    : 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 border-indigo-100 dark:border-indigo-900/50 hover:bg-indigo-100'
+                }`}
+              >
+                {saveStatus === 'saved' ? <Check size={16} /> : <Save size={16} />}
+                {saveStatus === 'saved' ? '¡GUARDADO!' : 'GUARDAR DATOS'}
+              </button>
+              
+              <div className="relative group">
+                <input 
+                  type="file" 
+                  accept=".csv" 
+                  ref={csvInputRef}
+                  onChange={handleCsvUpload} 
+                  className="absolute inset-0 opacity-0 cursor-pointer z-10" 
+                />
+                <button 
+                  className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 text-xs font-black rounded-lg border border-emerald-100 dark:border-emerald-900/50 hover:bg-emerald-100 transition-all"
+                >
+                  <FileSpreadsheet size={16} />
+                  CARGAR CSV
+                </button>
+                <div className="absolute right-0 top-full mt-2 w-64 p-3 bg-gray-800 text-white text-[10px] rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-30">
+                  <div className="flex items-start gap-2">
+                    <Info size={14} className="text-indigo-400 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-bold mb-1 uppercase tracking-wider">Formato CSV esperado:</p>
+                      <p className="text-gray-300 italic">name, address, phone, email, website, idNumber, whatsapp, sinpe, iban, bank</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <button 
+                onClick={() => setIsIssuerExpanded(!isIssuerExpanded)}
+                className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-gray-400 dark:text-gray-500"
+              >
+                {isIssuerExpanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+              </button>
+            </div>
           </div>
           
           {isIssuerExpanded && (
@@ -622,12 +791,17 @@ const App: React.FC = () => {
                   <input type="date" className={`${inputBaseClass} border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-white focus:ring-indigo-500`} value={docMetadata.date} onChange={(e) => setDocMetadata({ ...docMetadata, date: e.target.value })} />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-gray-400 dark:text-gray-500 uppercase mb-1">Vencimiento (Auto)</label>
-                  <input type="date" className="w-full px-4 py-2 rounded-lg border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/30 outline-none text-gray-500 dark:text-gray-600 cursor-not-allowed" value={docMetadata.expiryDate} readOnly />
+                  <label className="block text-xs font-bold text-gray-400 dark:text-gray-500 uppercase mb-1">Vigencia (en días)</label>
+                  <input 
+                    type="number" 
+                    className={`${inputBaseClass} border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-white focus:ring-indigo-500`} 
+                    value={offerConditions.validezDias} 
+                    onChange={(e) => setOfferConditions({ ...offerConditions, validezDias: e.target.value })} 
+                  />
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-gray-400 dark:text-gray-500 uppercase mb-1">Vendedor</label>
-                  <input type="text" className={`${inputBaseClass} border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-white focus:ring-indigo-500`} value={docMetadata.vendor} onChange={(e) => setDocMetadata({ ...docMetadata, vendor: e.target.value })} />
+                  <input type="text" placeholder="N/A" className={`${inputBaseClass} border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-white focus:ring-indigo-500`} value={docMetadata.vendor} onChange={(e) => setDocMetadata({ ...docMetadata, vendor: e.target.value })} />
                 </div>
               </div>
             </div>
