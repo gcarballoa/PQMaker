@@ -56,6 +56,59 @@ const App: React.FC = () => {
     };
   });
 
+  // Phone Formatter Utility
+  const formatPhone = (val: string) => {
+    if (!val) return '';
+    
+    const isPlus = val.trim().startsWith('+');
+    const digits = val.replace(/\D/g, '');
+    
+    // If user only typed '+', keep it
+    if (digits.length === 0) return isPlus ? '+' : '';
+
+    let prefix = '';
+    let rest = '';
+
+    if (isPlus) {
+      // User typed '+' -> use the first 3 digits as prefix
+      prefix = digits.substring(0, 3);
+      rest = digits.substring(3);
+    } else {
+      // User didn't type '+' -> use default '506'
+      prefix = '506';
+      rest = digits;
+    }
+
+    let result = `+${prefix}`;
+    
+    if (rest.length > 0) {
+      // First block of rest is separated by space (+xxx xxxx-xxxx)
+      result += ' ' + rest.substring(0, 4);
+      
+      // Subsequent blocks are grouped by 4 and separated by hyphen
+      const others = rest.substring(4);
+      for (let i = 0; i < others.length; i += 4) {
+        result += '-' + others.substring(i, i + 4);
+      }
+    }
+    
+    return result;
+  };
+
+  // IBAN Formatter Utility (CR + 17 digits)
+  const formatIBAN = (val: string) => {
+    if (!val) return '';
+    
+    // Extract only digits
+    let digits = val.toUpperCase().replace(/[^0-9]/g, '');
+    
+    // Limit to 17 digits as per instruction
+    digits = digits.slice(0, 17);
+    
+    // Always return CR + the digits found
+    return 'CR' + digits;
+  };
+
   // Effect to sync expiry date when validity days or emission date changes
   useEffect(() => {
     const emission = new Date(docMetadata.date);
@@ -163,7 +216,7 @@ const App: React.FC = () => {
           <div className="flex items-center gap-4">
             <img src={issuer.logo} alt="PresuMaker Logo" className="w-16 h-16 rounded shadow-sm object-cover" />
             <div>
-              <h1 className="text-2xl font-bold text-gray-800">PresuMaker</h1>
+              <h1 className="text-2xl font-bold text-gray-800">PQMaker</h1>
               <p className="text-gray-500 text-sm">Generador de Presupuestos</p>
             </div>
           </div>
@@ -237,7 +290,13 @@ const App: React.FC = () => {
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Teléfono</label>
-                    <input type="text" className={inputBaseClass} value={issuer.phone} onChange={(e) => setIssuer({ ...issuer, phone: e.target.value })} />
+                    <input 
+                      type="text" 
+                      placeholder="+506 0000-0000"
+                      className={inputBaseClass} 
+                      value={issuer.phone} 
+                      onChange={(e) => setIssuer({ ...issuer, phone: formatPhone(e.target.value) })} 
+                    />
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Correo Electrónico</label>
@@ -249,7 +308,13 @@ const App: React.FC = () => {
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-400 uppercase mb-1">WhatsApp</label>
-                    <input type="text" placeholder="+506 ...." className={inputBaseClass} value={issuer.whatsapp} onChange={(e) => setIssuer({ ...issuer, whatsapp: e.target.value })} />
+                    <input 
+                      type="text" 
+                      placeholder="+506 0000-0000" 
+                      className={inputBaseClass} 
+                      value={issuer.whatsapp} 
+                      onChange={(e) => setIssuer({ ...issuer, whatsapp: formatPhone(e.target.value) })} 
+                    />
                   </div>
                 </div>
               </div>
@@ -263,11 +328,23 @@ const App: React.FC = () => {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Cuenta SINPE</label>
-                    <input type="text" placeholder="Número de teléfono" className={inputBaseClass} value={issuer.sinpe} onChange={(e) => setIssuer({ ...issuer, sinpe: e.target.value })} />
+                    <input 
+                      type="text" 
+                      placeholder="+506 0000-0000" 
+                      className={inputBaseClass} 
+                      value={issuer.sinpe} 
+                      onChange={(e) => setIssuer({ ...issuer, sinpe: formatPhone(e.target.value) })} 
+                    />
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Cuenta IBAN</label>
-                    <input type="text" placeholder="CR00..." className={inputBaseClass} value={issuer.iban} onChange={(e) => setIssuer({ ...issuer, iban: e.target.value })} />
+                    <input 
+                      type="text" 
+                      placeholder="CR + 17 dígitos" 
+                      className={inputBaseClass} 
+                      value={issuer.iban} 
+                      onChange={(e) => setIssuer({ ...issuer, iban: formatIBAN(e.target.value) })} 
+                    />
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Banco</label>
@@ -382,7 +459,13 @@ const App: React.FC = () => {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Teléfono Empresa</label>
-                    <input type="text" placeholder="2222-3333" className={inputBaseClass} value={client.companyPhone} onChange={(e) => setClient({ ...client, companyPhone: e.target.value })} />
+                    <input 
+                      type="text" 
+                      placeholder="+506 0000-0000" 
+                      className={inputBaseClass} 
+                      value={client.companyPhone} 
+                      onChange={(e) => setClient({ ...client, companyPhone: formatPhone(e.target.value) })} 
+                    />
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Correo Empresa</label>
@@ -398,7 +481,13 @@ const App: React.FC = () => {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Teléfono Contacto</label>
-                    <input type="text" placeholder="8888-0000" className={inputBaseClass} value={client.contactPhone} onChange={(e) => setClient({ ...client, contactPhone: e.target.value })} />
+                    <input 
+                      type="text" 
+                      placeholder="+506 0000-0000" 
+                      className={inputBaseClass} 
+                      value={client.contactPhone} 
+                      onChange={(e) => setClient({ ...client, contactPhone: formatPhone(e.target.value) })} 
+                    />
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Correo Contacto</label>

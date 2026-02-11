@@ -10,7 +10,7 @@ export const COMPANY_CONFIG: CompanyData = {
   idNumber: "109240206",
   logo: "https://picsum.photos/id/2/200/200",
   whatsapp: "+506 6274-8990",
-  sinpe: "6274-8990",
+  sinpe: "+506 6274-8990",
   iban: "",
   bank: ""
 };
