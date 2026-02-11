@@ -1,0 +1,5 @@
+{
+  "name": "PQMaker",
+  "description": "Professional budget and estimate generator for businesses. Features multi-page PDF generation with pre-loaded company data and customizable client details.",
+  "requestFramePermissions": []
+}
