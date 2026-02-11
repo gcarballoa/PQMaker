@@ -359,6 +359,7 @@ export const generatePDF = async (
 
       return [
         (startIndex + idx + 1).toString(),
+        item.code || '',
         qty.toString(),
         item.description,
         `${displaySymbol}${formatCurrency(price)}`,
@@ -368,7 +369,7 @@ export const generatePDF = async (
 
     autoTable(doc, {
       startY: 100,
-      head: [['#', 'Cant.', 'Descripción', `P. Unit (${config.currency})`, `Total (${config.currency})`]],
+      head: [['#', 'Código', 'Cant.', 'Descripción', `P. Unit (${config.currency})`, `Total (${config.currency})`]],
       body: tableData,
       margin: { left: margin, right: margin },
       theme: 'grid',
@@ -380,10 +381,11 @@ export const generatePDF = async (
       },
       columnStyles: {
         0: { cellWidth: 10, halign: 'center' },
-        1: { cellWidth: 15, halign: 'center' },
-        2: { cellWidth: 'auto' },
-        3: { cellWidth: 38, halign: 'right' },
-        4: { cellWidth: 38, halign: 'right' }
+        1: { cellWidth: 25, halign: 'center' },
+        2: { cellWidth: 15, halign: 'center' },
+        3: { cellWidth: 'auto' },
+        4: { cellWidth: 35, halign: 'right' },
+        5: { cellWidth: 35, halign: 'right' }
       },
       styles: {
         fontSize: 9,

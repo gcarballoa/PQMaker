@@ -194,7 +194,7 @@ const App: React.FC = () => {
   });
 
   const [items, setItems] = useState<BudgetItem[]>([
-    { id: crypto.randomUUID(), quantity: '', description: '', unitPrice: '' }
+    { id: crypto.randomUUID(), code: '', quantity: '', description: '', unitPrice: '' }
   ]);
 
   const [config, setConfig] = useState<BudgetConfig>({
@@ -218,7 +218,7 @@ const App: React.FC = () => {
   };
 
   const handleAddItem = () => {
-    setItems([...items, { id: crypto.randomUUID(), quantity: '', description: '', unitPrice: '' }]);
+    setItems([...items, { id: crypto.randomUUID(), code: '', quantity: '', description: '', unitPrice: '' }]);
   };
 
   const handleRemoveItem = (id: string) => {
@@ -698,6 +698,7 @@ const App: React.FC = () => {
             <thead>
               <tr className="text-left text-xs font-bold text-gray-400 dark:text-gray-500 uppercase border-b border-gray-100 dark:border-gray-800">
                 <th className="pb-3 w-10 text-center">#</th>
+                <th className="pb-3 w-24">Código</th>
                 <th className="pb-3 w-16">Cant.</th>
                 <th className="pb-3">Descripción</th>
                 <th className="pb-3 w-32 text-right">Precio Unit. (CRC)</th>
@@ -712,6 +713,9 @@ const App: React.FC = () => {
                 return (
                   <tr key={item.id} className="group hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
                     <td className="py-2 text-xs text-gray-400 font-bold text-center">{index + 1}</td>
+                    <td className="py-2">
+                      <input type="text" placeholder="SKU-001" className="w-full px-2 py-1.5 rounded border border-gray-200 dark:border-gray-700 dark:bg-gray-800 dark:text-white outline-none text-sm" value={item.code} onChange={(e) => updateItem(item.id, 'code', e.target.value)} />
+                    </td>
                     <td className="py-2">
                       <input type="number" className="w-full px-2 py-1.5 rounded border border-gray-200 dark:border-gray-700 dark:bg-gray-800 dark:text-white outline-none text-center text-sm" value={item.quantity} onChange={(e) => updateItem(item.id, 'quantity', e.target.value)} />
                     </td>

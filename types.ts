@@ -45,6 +45,7 @@ export interface DocumentMetadata {
 
 export interface BudgetItem {
   id: string;
+  code: string;
   quantity: number | string;
   description: string;
   unitPrice: number | string;
