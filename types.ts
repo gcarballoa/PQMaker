@@ -57,3 +57,13 @@ export interface BudgetConfig {
   currency: 'CRC' | 'USD';
   exchangeRate: number | string;
 }
+
+export interface CompleteBudget {
+  metadata: DocumentMetadata;
+  client: ClientData;
+  items: BudgetItem[];
+  config: BudgetConfig;
+  offerConditions: OfferConditions;
+  issuer: CompanyData;
+  version: string;
+}

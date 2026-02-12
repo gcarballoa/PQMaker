@@ -5,9 +5,9 @@ import {
   Calendar, FileDigit, Image as ImageIcon, Gavel, CreditCard, RefreshCcw,
   ChevronDown, ChevronUp, AlertCircle, LogOut, Lock, User as UserIcon,
   Users, ShieldCheck, UserPlus, Upload, FileSpreadsheet, Info, Save, Check,
-  FilePlus, Eraser
+  FilePlus, Eraser, DownloadCloud, UploadCloud, FileUp, FileDown
 } from 'lucide-react';
-import { ClientData, BudgetItem, BudgetConfig, CompanyData, DocumentMetadata, OfferConditions } from './types';
+import { ClientData, BudgetItem, BudgetConfig, CompanyData, DocumentMetadata, OfferConditions, CompleteBudget } from './types';
 import { COMPANY_CONFIG, FOOTER_CONFIG } from './constants';
 import { VALID_CREDENTIALS, UserCredential, UserRole } from './credentials';
 import { generatePDF } from './services/pdfService';
@@ -56,6 +56,8 @@ const App: React.FC = () => {
   // Refs for focus management
   const addItemBtnRef = useRef<HTMLButtonElement>(null);
   const csvInputRef = useRef<HTMLInputElement>(null);
+  const jsonImportRef = useRef<HTMLInputElement>(null);
+  const budgetImportRef = useRef<HTMLInputElement>(null);
 
   // UI States for collapsible sections
   const [isIssuerExpanded, setIsIssuerExpanded] = useState(true);
@@ -63,34 +65,78 @@ const App: React.FC = () => {
   const [isClientExpanded, setIsClientExpanded] = useState(true);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saved'>('idle');
 
-  // Issuer State - Associated with current user
-  const [issuer, setIssuer] = useState<CompanyData>(() => {
-    if (currentUser) {
-      const savedIssuer = localStorage.getItem(`pqmaker_issuer_${currentUser.username}`);
-      return savedIssuer ? JSON.parse(savedIssuer) : { ...COMPANY_CONFIG };
+  // Utility to get initial issuer data
+  const getInitialIssuer = useCallback((username?: string) => {
+    // 1. Try User Specific
+    if (username) {
+      const saved = localStorage.getItem(`pqmaker_issuer_${username}`);
+      if (saved) return JSON.parse(saved);
     }
+    // 2. Try Global Saved
+    const globalSaved = localStorage.getItem('pqmaker_global_issuer');
+    if (globalSaved) return JSON.parse(globalSaved);
+    // 3. Fallback to hardcoded config
     return { ...COMPANY_CONFIG };
-  });
+  }, []);
 
-  // Effect to load user-specific issuer data when user changes (login/logout/refresh)
+  // Issuer State
+  const [issuer, setIssuer] = useState<CompanyData>(() => getInitialIssuer(currentUser?.username));
+
+  // Effect to load user-specific issuer data when user changes
   useEffect(() => {
     if (currentUser) {
-      const savedIssuer = localStorage.getItem(`pqmaker_issuer_${currentUser.username}`);
-      if (savedIssuer) {
-        setIssuer(JSON.parse(savedIssuer));
-      } else {
-        setIssuer({ ...COMPANY_CONFIG });
-      }
+      setIssuer(getInitialIssuer(currentUser.username));
     }
-  }, [currentUser?.username]); // Only depend on username to prevent unnecessary loads
+  }, [currentUser?.username, getInitialIssuer]);
 
-  // Manual save handler for issuer data - This is the primary persistence method
+  // Manual save handler for issuer data
   const handleSaveIssuer = () => {
-    if (currentUser && issuer) {
-      localStorage.setItem(`pqmaker_issuer_${currentUser.username}`, JSON.stringify(issuer));
+    if (issuer) {
+      // Save to global fallback
+      localStorage.setItem('pqmaker_global_issuer', JSON.stringify(issuer));
+      
+      // Save user-specific
+      if (currentUser) {
+        localStorage.setItem(`pqmaker_issuer_${currentUser.username}`, JSON.stringify(issuer));
+      }
+      
       setSaveStatus('saved');
       setTimeout(() => setSaveStatus('idle'), 2000);
     }
+  };
+
+  // Export Issuer Config to JSON File
+  const handleExportIssuerJSON = () => {
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(issuer, null, 2));
+    const downloadAnchorNode = document.createElement('a');
+    downloadAnchorNode.setAttribute("href", dataStr);
+    downloadAnchorNode.setAttribute("download", `pqmaker_config_${issuer.name.replace(/\s+/g, '_').toLowerCase()}.json`);
+    document.body.appendChild(downloadAnchorNode);
+    downloadAnchorNode.click();
+    downloadAnchorNode.remove();
+  };
+
+  // Import Issuer Config from JSON File
+  const handleImportIssuerJSON = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const json = JSON.parse(event.target?.result as string);
+        if (json.name && json.idNumber) {
+          setIssuer(json);
+          alert("Configuración de empresa cargada exitosamente. Haga clic en 'GUARDAR DATOS' para confirmar.");
+        } else {
+          alert("El archivo JSON no parece ser un perfil válido de PQMaker.");
+        }
+      } catch (err) {
+        alert("Error al leer el archivo JSON.");
+      }
+      if (jsonImportRef.current) jsonImportRef.current.value = '';
+    };
+    reader.readAsText(file);
   };
 
   // Offer Conditions State
@@ -113,6 +159,79 @@ const App: React.FC = () => {
       vendor: ''
     };
   });
+
+  // Client State
+  const [client, setClient] = useState<ClientData>({
+    companyName: '',
+    companyPhone: '',
+    companyEmail: '',
+    contactName: '',
+    contactPhone: '',
+    contactEmail: ''
+  });
+
+  const [items, setItems] = useState<BudgetItem[]>([
+    { id: crypto.randomUUID(), code: '', quantity: '', description: '', unitPrice: '' }
+  ]);
+
+  const [config, setConfig] = useState<BudgetConfig>({
+    discountPercent: '',
+    taxPercent: 13,
+    currency: 'CRC',
+    exchangeRate: 515.00 
+  });
+
+  // EXPORT COMPLETE BUDGET
+  const handleExportBudgetJSON = () => {
+    const completeBudget: CompleteBudget = {
+      metadata: docMetadata,
+      client: client,
+      items: items,
+      config: config,
+      offerConditions: offerConditions,
+      issuer: issuer, // Incluye datos del emisor y métodos de pago
+      version: '1.0.1'
+    };
+
+    const fileName = `presupuesto_${docMetadata.proformaNumber || 'sin_numero'}_${client.companyName || 'cliente'}.json`.replace(/\s+/g, '_').toLowerCase();
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(completeBudget, null, 2));
+    const downloadAnchorNode = document.createElement('a');
+    downloadAnchorNode.setAttribute("href", dataStr);
+    downloadAnchorNode.setAttribute("download", fileName);
+    document.body.appendChild(downloadAnchorNode);
+    downloadAnchorNode.click();
+    downloadAnchorNode.remove();
+  };
+
+  // IMPORT COMPLETE BUDGET
+  const handleImportBudgetJSON = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const json = JSON.parse(event.target?.result as string) as CompleteBudget;
+        if (json.items && json.client && json.metadata) {
+          setDocMetadata(json.metadata);
+          setClient(json.client);
+          setItems(json.items);
+          setConfig(json.config);
+          setOfferConditions(json.offerConditions);
+          if (json.issuer) {
+            setIssuer(json.issuer); // Restaura datos del emisor y métodos de pago
+          }
+          alert("Presupuesto cargado exitosamente.");
+        } else {
+          alert("El archivo no es un presupuesto válido de PQMaker.");
+        }
+      } catch (err) {
+        alert("Error al procesar el archivo del presupuesto.");
+      }
+      if (budgetImportRef.current) budgetImportRef.current.value = '';
+    };
+    reader.readAsText(file);
+  };
 
   // Phone Formatter Utility
   const formatPhone = (val: string) => {
@@ -197,7 +316,6 @@ const App: React.FC = () => {
       headers.forEach((header, index) => {
         const field = mapping[header];
         if (field && values[index]) {
-          // Special formatting for specific fields
           if (field === 'phone' || field === 'whatsapp' || field === 'sinpe') {
             (newData as any)[field] = formatPhone(values[index]);
           } else if (field === 'iban') {
@@ -209,7 +327,7 @@ const App: React.FC = () => {
       });
 
       setIssuer(newData);
-      alert("Información de la empresa cargada exitosamente. No olvide hacer clic en 'GUARDAR DATOS' para que persistan en su perfil.");
+      alert("Información de la empresa cargada exitosamente. Haga clic en 'GUARDAR DATOS' para que persista.");
       if (csvInputRef.current) csvInputRef.current.value = '';
     };
     reader.readAsText(file);
@@ -235,6 +353,7 @@ const App: React.FC = () => {
     sessionStorage.removeItem('pqmaker_current_user');
     setLoginUser('');
     setLoginPass('');
+    setIssuer(getInitialIssuer());
   };
 
   // Admin User Management
@@ -273,27 +392,6 @@ const App: React.FC = () => {
     }
   }, [offerConditions.validezDias, docMetadata.date]);
 
-  // Client State
-  const [client, setClient] = useState<ClientData>({
-    companyName: '',
-    companyPhone: '',
-    companyEmail: '',
-    contactName: '',
-    contactPhone: '',
-    contactEmail: ''
-  });
-
-  const [items, setItems] = useState<BudgetItem[]>([
-    { id: crypto.randomUUID(), code: '', quantity: '', description: '', unitPrice: '' }
-  ]);
-
-  const [config, setConfig] = useState<BudgetConfig>({
-    discountPercent: '',
-    taxPercent: 13,
-    currency: 'CRC',
-    exchangeRate: 515.00 
-  });
-
   const [isGenerating, setIsGenerating] = useState(false);
 
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -321,13 +419,13 @@ const App: React.FC = () => {
     setItems(items.map(item => item.id === id ? { ...item, [field]: value } : item));
   };
 
-  // Clear Budget Logic
   const handleClearBudget = () => {
-    if (window.confirm("¿Está seguro de que desea limpiar el presupuesto actual? Se borrarán todos los datos del cliente, documento e ítems.")) {
-      // Reset Doc Metadata
+    if (window.confirm("¿Está seguro de que desea limpiar el presupuesto actual? Se restablecerán los datos del cliente, ajustes finales e ítems. Se conservarán los datos del emisor y métodos de pago.")) {
       const today = new Date();
       const expiry = new Date();
       expiry.setDate(today.getDate() + 30);
+      
+      // Reseteo de Información del Documento
       setDocMetadata({
         proformaNumber: '',
         date: today.toISOString().split('T')[0],
@@ -335,7 +433,7 @@ const App: React.FC = () => {
         vendor: ''
       });
 
-      // Reset Client
+      // Reseteo de Datos del Cliente
       setClient({
         companyName: '',
         companyPhone: '',
@@ -345,13 +443,26 @@ const App: React.FC = () => {
         contactEmail: ''
       });
 
-      // Reset Items
+      // Reseteo de Ítems (Elimina líneas y deja una vacía)
       setItems([{ id: crypto.randomUUID(), code: '', quantity: '', description: '', unitPrice: '' }]);
 
-      // Reset Discount only
-      setConfig(prev => ({ ...prev, discountPercent: '' }));
-      
-      alert("Presupuesto limpiado. Puede iniciar una nueva proforma.");
+      // Reseteo de Ajustes Finales
+      setConfig({
+        discountPercent: '',
+        taxPercent: 13,
+        currency: 'CRC',
+        exchangeRate: 515.00
+      });
+
+      // Reseteo de Condiciones de Oferta (Opcional, pero recomendado para consistencia)
+      setOfferConditions({
+        validezDias: 30,
+        tiempoEntrega: '3-5 días hábiles',
+        garantia: '1 año contra defectos de fábrica',
+        condicionesPago: 'Contado'
+      });
+
+      alert("Presupuesto restablecido correctamente.");
     }
   };
 
@@ -411,7 +522,6 @@ const App: React.FC = () => {
       : "border-gray-300 focus:ring-indigo-500 focus:border-indigo-500"
   }`;
 
-  // Auth View
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-950 flex items-center justify-center p-4 transition-colors duration-500">
@@ -477,7 +587,6 @@ const App: React.FC = () => {
     );
   }
 
-  // Main App View
   return (
     <div className="min-h-screen pb-12 bg-gray-50 dark:bg-gray-950 transition-colors duration-500">
       <header className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 py-6 mb-8 shadow-sm">
@@ -512,31 +621,57 @@ const App: React.FC = () => {
       </header>
 
       <main className="container mx-auto px-4 max-w-5xl space-y-8">
-        <div className="sticky top-4 z-20 flex justify-end mb-4 gap-3">
+        <div className="sticky top-4 z-20 flex flex-wrap justify-end mb-4 gap-3 bg-white/80 dark:bg-gray-900/80 backdrop-blur-md p-3 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-800">
+          <div className="flex gap-2">
+            <button
+              onClick={handleExportBudgetJSON}
+              title="Guardar presupuesto actual como archivo (Incluye mis datos y pagos)"
+              className="flex items-center justify-center gap-2 px-4 py-3 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 border border-indigo-100 dark:border-indigo-800 rounded-xl font-bold hover:bg-indigo-100 transition-all active:scale-95 text-sm"
+            >
+              <FileDown size={18} />
+              GUARDAR JSON
+            </button>
+            <div className="relative group">
+              <input 
+                type="file" 
+                accept=".json" 
+                ref={budgetImportRef}
+                onChange={handleImportBudgetJSON} 
+                className="absolute inset-0 opacity-0 cursor-pointer z-10" 
+              />
+              <button
+                title="Cargar presupuesto desde archivo (Restaura mis datos y pagos)"
+                className="flex items-center justify-center gap-2 px-4 py-3 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-800 rounded-xl font-bold hover:bg-indigo-100 transition-all active:scale-95 text-sm"
+              >
+                <FileUp size={18} />
+                CARGAR JSON
+              </button>
+            </div>
+          </div>
+          <div className="h-10 w-[1px] bg-gray-200 dark:bg-gray-800 mx-1 self-center" />
           <button
             onClick={handleClearBudget}
-            className="flex items-center justify-center gap-2 px-6 py-4 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700 rounded-xl font-bold hover:bg-gray-50 dark:hover:bg-gray-700 transition-all shadow-md active:scale-95"
+            className="flex items-center justify-center gap-2 px-4 py-3 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700 rounded-xl font-bold hover:bg-gray-50 dark:hover:bg-gray-700 transition-all active:scale-95 text-sm"
           >
-            <RefreshCcw size={20} />
-            LIMPIAR DATOS
+            <RefreshCcw size={18} />
+            LIMPIAR
           </button>
           <button
             onClick={handleGeneratePDF}
             disabled={isGenerating || !isFormValid}
-            className="flex items-center justify-center gap-3 px-8 py-4 bg-indigo-600 dark:bg-indigo-500 text-white rounded-xl font-black hover:bg-indigo-700 dark:hover:bg-indigo-600 transition-all disabled:opacity-50 shadow-xl scale-100 hover:scale-105 active:scale-95"
+            className="flex items-center justify-center gap-3 px-6 py-3 bg-indigo-600 dark:bg-indigo-500 text-white rounded-xl font-black hover:bg-indigo-700 dark:hover:bg-indigo-600 transition-all disabled:opacity-50 shadow-md active:scale-95 text-sm"
           >
             {isGenerating ? (
               <div className="animate-spin h-5 w-5 border-2 border-white border-t-transparent rounded-full" />
             ) : (
               <>
-                <Download size={24} />
-                GENERAR PDF ({config.currency})
+                <Download size={20} />
+                PDF ({config.currency})
               </>
             )}
           </button>
         </div>
 
-        {/* User Management Section (ADMIN ONLY) */}
         {currentUser?.role === 'administrador' && (
           <section className="bg-indigo-50 dark:bg-indigo-950/20 p-6 rounded-xl shadow-sm border border-indigo-100 dark:border-indigo-900/50 overflow-hidden">
             <div className="flex items-center justify-between gap-2 mb-4 border-b border-indigo-200 dark:border-indigo-900/50 pb-4">
@@ -555,7 +690,6 @@ const App: React.FC = () => {
             {isUsersExpanded && (
               <div className="animate-in slide-in-from-top-2 duration-300">
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                  {/* Create User Form */}
                   <form onSubmit={handleCreateUser} className="space-y-4 bg-white dark:bg-gray-900 p-5 rounded-xl border border-indigo-100 dark:border-indigo-900/30">
                     <div className="flex items-center gap-2 mb-2 text-indigo-600 dark:text-indigo-400">
                       <UserPlus size={18} />
@@ -599,7 +733,6 @@ const App: React.FC = () => {
                     </button>
                   </form>
 
-                  {/* Users Table */}
                   <div className="overflow-x-auto">
                     <table className="w-full text-left text-sm">
                       <thead className="text-[10px] font-black text-indigo-400 uppercase border-b border-indigo-100 dark:border-indigo-900/30">
@@ -645,9 +778,10 @@ const App: React.FC = () => {
               <Building2 size={20} />
               <h2 className="text-lg font-semibold uppercase tracking-tight">Datos de Mi Empresa (Emisor)</h2>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <button 
                 onClick={handleSaveIssuer}
+                title="Guardar cambios en el navegador"
                 className={`flex items-center gap-2 px-3 py-1.5 text-xs font-black rounded-lg border transition-all ${
                   saveStatus === 'saved' 
                     ? 'bg-emerald-500 text-white border-emerald-400' 
@@ -657,6 +791,34 @@ const App: React.FC = () => {
                 {saveStatus === 'saved' ? <Check size={16} /> : <Save size={16} />}
                 {saveStatus === 'saved' ? '¡GUARDADO!' : 'GUARDAR DATOS'}
               </button>
+
+              <div className="h-4 w-[1px] bg-gray-200 dark:bg-gray-700 mx-1 hidden sm:block" />
+
+              <button 
+                onClick={handleExportIssuerJSON}
+                title="Descargar perfil como archivo JSON"
+                className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 text-xs font-black rounded-lg border border-blue-100 dark:border-blue-900/50 hover:bg-blue-100 transition-all"
+              >
+                <DownloadCloud size={16} />
+                PERFIL
+              </button>
+
+              <div className="relative group">
+                <input 
+                  type="file" 
+                  accept=".json" 
+                  ref={jsonImportRef}
+                  onChange={handleImportIssuerJSON} 
+                  className="absolute inset-0 opacity-0 cursor-pointer z-10" 
+                />
+                <button 
+                  title="Cargar perfil desde archivo JSON"
+                  className="flex items-center gap-2 px-3 py-1.5 bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 text-xs font-black rounded-lg border border-purple-100 dark:border-purple-900/50 hover:bg-purple-100 transition-all"
+                >
+                  <UploadCloud size={16} />
+                  IMPORTAR
+                </button>
+              </div>
               
               <div className="relative group">
                 <input 
@@ -670,18 +832,10 @@ const App: React.FC = () => {
                   className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 text-xs font-black rounded-lg border border-emerald-100 dark:border-emerald-900/50 hover:bg-emerald-100 transition-all"
                 >
                   <FileSpreadsheet size={16} />
-                  CARGAR CSV
+                  CSV
                 </button>
-                <div className="absolute right-0 top-full mt-2 w-64 p-3 bg-gray-800 text-white text-[10px] rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-30">
-                  <div className="flex items-start gap-2">
-                    <Info size={14} className="text-indigo-400 shrink-0 mt-0.5" />
-                    <div>
-                      <p className="font-bold mb-1 uppercase tracking-wider">Formato CSV esperado:</p>
-                      <p className="text-gray-300 italic">name, address, phone, email, website, idNumber, whatsapp, sinpe, iban, bank</p>
-                    </div>
-                  </div>
-                </div>
               </div>
+
               <button 
                 onClick={() => setIsIssuerExpanded(!isIssuerExpanded)}
                 className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-gray-400 dark:text-gray-500"
