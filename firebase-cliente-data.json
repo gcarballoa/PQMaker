@@ -1,0 +1,21 @@
+
+{
+  "clientes": {
+    "cliente-id-unico-1": {
+      "companyName": "Constructora El Futuro S.A.",
+      "companyPhone": "+506 2200-1122",
+      "companyEmail": "proyectos@elfuturo.com",
+      "contactName": "Ing. Carlos Rojas",
+      "contactPhone": "+506 8900-3344",
+      "contactEmail": "c.rojas@elfuturo.com"
+    },
+    "cliente-id-unico-2": {
+      "companyName": "Diseño y Arquitectura Creativa",
+      "companyPhone": "+506 2525-6070",
+      "companyEmail": "info@dacreativa.com",
+      "contactName": "Laura Mendez",
+      "contactPhone": "+506 8765-4321",
+      "contactEmail": "laura.m@dacreativa.com"
+    }
+  }
+}

@@ -1,0 +1,51 @@
+
+{
+  "presupuestos": {
+    "presupuesto-id-unico-1": {
+      "metadata": {
+        "proformaNumber": "PQ-2024-08-001",
+        "date": "2024-08-15",
+        "expiryDate": "2024-09-14",
+        "vendor": "carbatk"
+      },
+      "clientId": "cliente-id-unico-1",
+      "issuerId": "emisor-id-principal",
+      "status": "borrador",
+      "items": [
+        {
+          "id": "uuid-item-1",
+          "code": "SRV-001",
+          "quantity": 1,
+          "description": "Servicio de consultoría y diseño de red estructurada",
+          "unitPrice": 350000
+        },
+        {
+          "id": "uuid-item-2",
+          "code": "HW-SWITCH-24",
+          "quantity": 2,
+          "description": "Switch Gigabit de 24 puertos administrable",
+          "unitPrice": 185000
+        }
+      ],
+      "config": {
+        "discountPercent": 10,
+        "taxPercent": 13,
+        "currency": "CRC",
+        "exchangeRate": 515.00
+      },
+      "offerConditions": {
+        "validezDias": 30,
+        "tiempoEntrega": "10 días hábiles",
+        "garantia": "1 año en equipos",
+        "condicionesPago": "Contado"
+      },
+      "totals": {
+        "subtotal": 720000,
+        "discountAmount": 72000,
+        "taxableAmount": 648000,
+        "taxAmount": 84240,
+        "total": 732240
+      }
+    }
+  }
+}
