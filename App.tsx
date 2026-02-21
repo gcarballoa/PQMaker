@@ -5,7 +5,8 @@ import {
   Calendar, FileDigit, Image as ImageIcon, Gavel, CreditCard, RefreshCcw,
   ChevronDown, ChevronUp, AlertCircle, LogOut, Lock, User as UserIcon,
   Users, ShieldCheck, UserPlus, Upload, FileSpreadsheet, Info, Save, Check,
-  FilePlus, Eraser, DownloadCloud, UploadCloud, FileUp, FileDown
+  FilePlus, Eraser, DownloadCloud, UploadCloud, FileUp, FileDown, Database,
+  History, Bookmark
 } from 'lucide-react';
 import { ClientData, BudgetItem, BudgetConfig, CompanyData, DocumentMetadata, OfferConditions, CompleteBudget } from './types';
 import { COMPANY_CONFIG, FOOTER_CONFIG } from './constants';
@@ -28,15 +29,15 @@ const CR_BANKS = [
 
 const App: React.FC = () => {
   // Users List State (initialized with default credentials)
-  const [systemUsers, setSystemUsers] = useState<UserCredential[]>([]);
+  const [systemUsers, setSystemUsers] = useState<UserCredential[]>(() => {
+    const saved = localStorage.getItem('pqmaker_users');
+    return saved ? JSON.parse(saved) : VALID_CREDENTIALS;
+  });
 
-  // Load users from API
+  // Persist users to localStorage
   useEffect(() => {
-    fetch('/api/users')
-      .then(res => res.json())
-      .then(data => setSystemUsers(data))
-      .catch(err => console.error("Error loading users:", err));
-  }, []);
+    localStorage.setItem('pqmaker_users', JSON.stringify(systemUsers));
+  }, [systemUsers]);
 
   // Authentication State
   const [currentUser, setCurrentUser] = useState<UserCredential | null>(() => {
@@ -55,97 +56,141 @@ const App: React.FC = () => {
 
   // Refs for focus management
   const addItemBtnRef = useRef<HTMLButtonElement>(null);
-  const csvInputRef = useRef<HTMLInputElement>(null);
-  const jsonImportRef = useRef<HTMLInputElement>(null);
-  const budgetImportRef = useRef<HTMLInputElement>(null);
 
   // UI States for collapsible sections
   const [isIssuerExpanded, setIsIssuerExpanded] = useState(true);
   const [isDocMetadataExpanded, setIsDocMetadataExpanded] = useState(true);
   const [isClientExpanded, setIsClientExpanded] = useState(true);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saved'>('idle');
+  const [savedBudgets, setSavedBudgets] = useState<any[]>([]);
+  const [isBudgetsListExpanded, setIsBudgetsListExpanded] = useState(false);
+
+  // Fetch saved budgets from DB
+  const fetchSavedBudgets = useCallback(async (username: string) => {
+    try {
+      const response = await fetch(`/api/budgets/${username}`);
+      if (response.ok) {
+        const data = await response.json();
+        setSavedBudgets(data);
+      }
+    } catch (error) {
+      console.error("Error fetching budgets:", error);
+    }
+  }, []);
+
+  // Fetch issuer from DB
+  const fetchIssuer = useCallback(async (username: string) => {
+    try {
+      const response = await fetch(`/api/issuer/${username}`);
+      if (response.ok) {
+        const data = await response.json();
+        if (data) {
+          setIssuer(data);
+        } else {
+          setIssuer({ ...COMPANY_CONFIG });
+        }
+      }
+    } catch (error) {
+      console.error("Error fetching issuer:", error);
+    }
+  }, []);
 
   // Utility to get initial issuer data
   const getInitialIssuer = useCallback((username?: string) => {
-    // 1. Try User Specific
-    if (username) {
-      const saved = localStorage.getItem(`pqmaker_issuer_${username}`);
-      if (saved) return JSON.parse(saved);
-    }
-    // 2. Try Global Saved
-    const globalSaved = localStorage.getItem('pqmaker_global_issuer');
-    if (globalSaved) return JSON.parse(globalSaved);
-    // 3. Fallback to hardcoded config
+    // Fallback to hardcoded config
     return { ...COMPANY_CONFIG };
   }, []);
 
   // Issuer State
-  const [issuer, setIssuer] = useState<CompanyData>(COMPANY_CONFIG);
+  const [issuer, setIssuer] = useState<CompanyData>(() => getInitialIssuer(currentUser?.username));
 
   // Effect to load user-specific data when user changes
   useEffect(() => {
     if (currentUser) {
-      // Load Issuer
-      fetch(`/api/issuer/${currentUser.username}`)
-        .then(res => res.json())
-        .then(data => {
-          if (data && data.name) setIssuer(data);
-        })
-        .catch(err => console.error("Error loading issuer:", err));
+      fetchIssuer(currentUser.username);
+      fetchSavedBudgets(currentUser.username);
     }
-  }, [currentUser?.username]);
+  }, [currentUser?.username, fetchIssuer, fetchSavedBudgets]);
 
   // Manual save handler for issuer data
   const handleSaveIssuer = async () => {
     if (issuer && currentUser) {
       try {
-        const res = await fetch(`/api/issuer/${currentUser.username}`, {
+        const response = await fetch(`/api/issuer/${currentUser.username}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(issuer)
         });
-        if (res.ok) {
+        
+        if (response.ok) {
           setSaveStatus('saved');
           setTimeout(() => setSaveStatus('idle'), 2000);
         }
-      } catch (err) {
-        console.error("Error saving issuer:", err);
+      } catch (error) {
+        console.error("Error saving issuer:", error);
+        alert("Error al guardar los datos de la empresa.");
       }
     }
   };
 
-  // Export Issuer Config to JSON File
-  const handleExportIssuerJSON = () => {
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(issuer, null, 2));
-    const downloadAnchorNode = document.createElement('a');
-    downloadAnchorNode.setAttribute("href", dataStr);
-    downloadAnchorNode.setAttribute("download", `pqmaker_config_${issuer.name.replace(/\s+/g, '_').toLowerCase()}.json`);
-    document.body.appendChild(downloadAnchorNode);
-    downloadAnchorNode.click();
-    downloadAnchorNode.remove();
+  // Save current budget to DB
+  const handleSaveBudgetToDb = async () => {
+    if (!currentUser) return;
+
+    const completeBudget: CompleteBudget = {
+      metadata: docMetadata,
+      client: client,
+      items: items,
+      config: config,
+      offerConditions: offerConditions,
+      issuer: issuer,
+      version: '1.0.1'
+    };
+
+    try {
+      const response = await fetch(`/api/budgets/${currentUser.username}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(completeBudget)
+      });
+
+      if (response.ok) {
+        alert("Presupuesto guardado en la base de datos.");
+        fetchSavedBudgets(currentUser.username);
+      }
+    } catch (error) {
+      console.error("Error saving budget:", error);
+      alert("Error al guardar el presupuesto.");
+    }
   };
 
-  // Import Issuer Config from JSON File
-  const handleImportIssuerJSON = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const handleLoadBudgetFromDb = (budget: any) => {
+    setDocMetadata(budget.metadata);
+    setClient(budget.client);
+    setItems(budget.items);
+    setConfig(budget.config);
+    setOfferConditions(budget.offerConditions);
+    if (budget.issuer) {
+      setIssuer(budget.issuer);
+    }
+    alert("Presupuesto cargado.");
+  };
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        const json = JSON.parse(event.target?.result as string);
-        if (json.name && json.idNumber) {
-          setIssuer(json);
-          alert("Configuración de empresa cargada exitosamente. Haga clic en 'GUARDAR DATOS' para confirmar.");
-        } else {
-          alert("El archivo JSON no parece ser un perfil válido de PQMaker.");
-        }
-      } catch (err) {
-        alert("Error al leer el archivo JSON.");
+  const handleDeleteBudgetFromDb = async (id: string) => {
+    if (!currentUser) return;
+    if (!window.confirm("¿Seguro que deseas eliminar este presupuesto?")) return;
+
+    try {
+      const response = await fetch(`/api/budgets/${currentUser.username}/${id}`, {
+        method: 'DELETE'
+      });
+
+      if (response.ok) {
+        fetchSavedBudgets(currentUser.username);
       }
-      if (jsonImportRef.current) jsonImportRef.current.value = '';
-    };
-    reader.readAsText(file);
+    } catch (error) {
+      console.error("Error deleting budget:", error);
+    }
   };
 
   // Offer Conditions State
@@ -190,112 +235,6 @@ const App: React.FC = () => {
     exchangeRate: 515.00 
   });
 
-  // Saved Budgets and Clients State
-  const [savedBudgets, setSavedBudgets] = useState<Record<string, CompleteBudget>>({});
-  const [savedClients, setSavedClients] = useState<Record<string, ClientData>>({});
-
-  // Load user data (Budgets and Clients)
-  useEffect(() => {
-    if (currentUser) {
-      // Load Budgets
-      fetch(`/api/budgets/${currentUser.username}`)
-        .then(res => res.json())
-        .then(data => setSavedBudgets(data))
-        .catch(err => console.error("Error loading budgets:", err));
-
-      // Load Clients
-      fetch(`/api/clients/${currentUser.username}`)
-        .then(res => res.json())
-        .then(data => setSavedClients(data))
-        .catch(err => console.error("Error loading clients:", err));
-    }
-  }, [currentUser?.username]);
-
-  // Save Budget to Database
-  const handleSaveBudgetToDb = async () => {
-    if (!currentUser) return;
-    
-    const completeBudget: CompleteBudget = {
-      metadata: docMetadata,
-      client: client,
-      items: items,
-      config: config,
-      offerConditions: offerConditions,
-      issuer: issuer,
-      version: '1.0.1'
-    };
-
-    try {
-      const res = await fetch(`/api/budgets/${currentUser.username}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(completeBudget)
-      });
-      const data = await res.json();
-      if (data.success) {
-        // Refresh budgets
-        const budgetsRes = await fetch(`/api/budgets/${currentUser.username}`);
-        const budgetsData = await budgetsRes.json();
-        setSavedBudgets(budgetsData);
-        alert("Presupuesto guardado en la base de datos.");
-      }
-    } catch (err) {
-      console.error("Error saving budget to DB:", err);
-    }
-  };
-
-  // EXPORT COMPLETE BUDGET
-  const handleExportBudgetJSON = () => {
-    const completeBudget: CompleteBudget = {
-      metadata: docMetadata,
-      client: client,
-      items: items,
-      config: config,
-      offerConditions: offerConditions,
-      issuer: issuer, // Incluye datos del emisor y métodos de pago
-      version: '1.0.1'
-    };
-
-    const fileName = `presupuesto_${docMetadata.proformaNumber || 'sin_numero'}_${client.companyName || 'cliente'}.json`.replace(/\s+/g, '_').toLowerCase();
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(completeBudget, null, 2));
-    const downloadAnchorNode = document.createElement('a');
-    downloadAnchorNode.setAttribute("href", dataStr);
-    downloadAnchorNode.setAttribute("download", fileName);
-    document.body.appendChild(downloadAnchorNode);
-    downloadAnchorNode.click();
-    downloadAnchorNode.remove();
-  };
-
-  // IMPORT COMPLETE BUDGET
-  const handleImportBudgetJSON = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        const json = JSON.parse(event.target?.result as string) as CompleteBudget;
-        if (json.items && json.client && json.metadata) {
-          setDocMetadata(json.metadata);
-          setClient(json.client);
-          setItems(json.items);
-          setConfig(json.config);
-          setOfferConditions(json.offerConditions);
-          if (json.issuer) {
-            setIssuer(json.issuer); // Restaura datos del emisor y métodos de pago
-          }
-          alert("Presupuesto cargado exitosamente.");
-        } else {
-          alert("El archivo no es un presupuesto válido de PQMaker.");
-        }
-      } catch (err) {
-        alert("Error al procesar el archivo del presupuesto.");
-      }
-      if (budgetImportRef.current) budgetImportRef.current.value = '';
-    };
-    reader.readAsText(file);
-  };
-
   // Phone Formatter Utility
   const formatPhone = (val: string) => {
     if (!val) return '';
@@ -337,84 +276,17 @@ const App: React.FC = () => {
     return emailRegex.test(email);
   };
 
-  // CSV Upload Handler
-  const handleCsvUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const text = event.target?.result as string;
-      const lines = text.split('\n');
-      if (lines.length < 2) {
-        alert("El archivo CSV debe contener al menos una fila de encabezado y una de datos.");
-        return;
-      }
-
-      const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
-      const values = lines[1].split(',').map(v => v.trim());
-
-      const newData = { ...issuer };
-      
-      const mapping: Record<string, keyof CompanyData> = {
-        'nombre': 'name',
-        'name': 'name',
-        'direccion': 'address',
-        'address': 'address',
-        'telefono': 'phone',
-        'phone': 'phone',
-        'correo': 'email',
-        'email': 'email',
-        'web': 'website',
-        'website': 'website',
-        'cedula': 'idNumber',
-        'idnumber': 'idNumber',
-        'whatsapp': 'whatsapp',
-        'sinpe': 'sinpe',
-        'iban': 'iban',
-        'banco': 'bank',
-        'bank': 'bank'
-      };
-
-      headers.forEach((header, index) => {
-        const field = mapping[header];
-        if (field && values[index]) {
-          if (field === 'phone' || field === 'whatsapp' || field === 'sinpe') {
-            (newData as any)[field] = formatPhone(values[index]);
-          } else if (field === 'iban') {
-            (newData as any)[field] = formatIBAN(values[index]);
-          } else {
-            (newData as any)[field] = values[index];
-          }
-        }
-      });
-
-      setIssuer(newData);
-      alert("Información de la empresa cargada exitosamente. Haga clic en 'GUARDAR DATOS' para que persista.");
-      if (csvInputRef.current) csvInputRef.current.value = '';
-    };
-    reader.readAsText(file);
-  };
-
   // Login Handler
-  const handleLogin = async (e: React.FormEvent) => {
+  const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: loginUser, password: loginPass })
-      });
-      const data = await res.json();
-      if (data.success) {
-        setCurrentUser(data.user);
-        setLoginError(false);
-        sessionStorage.setItem('pqmaker_current_user', JSON.stringify(data.user));
-      } else {
-        setLoginError(true);
-      }
-    } catch (err) {
-      console.error("Login error:", err);
+    const userMatch = systemUsers.find(
+      c => c.username === loginUser && c.password === loginPass
+    );
+    if (userMatch) {
+      setCurrentUser(userMatch);
+      setLoginError(false);
+      sessionStorage.setItem('pqmaker_current_user', JSON.stringify(userMatch));
+    } else {
       setLoginError(true);
     }
   };
@@ -424,31 +296,22 @@ const App: React.FC = () => {
     sessionStorage.removeItem('pqmaker_current_user');
     setLoginUser('');
     setLoginPass('');
-    setIssuer(COMPANY_CONFIG);
+    setIssuer(getInitialIssuer());
   };
 
   // Admin User Management
-  const handleCreateUser = async (e: React.FormEvent) => {
+  const handleCreateUser = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newUser.username || !newUser.password) return;
     
-    try {
-      const res = await fetch('/api/users', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newUser)
-      });
-      const data = await res.json();
-      if (data.success) {
-        setSystemUsers(data.users);
-        setNewUser({ username: '', password: '', role: 'operador' });
-        alert("Usuario creado exitosamente.");
-      } else {
-        alert(data.message);
-      }
-    } catch (err) {
-      console.error("Error creating user:", err);
+    if (systemUsers.find(u => u.username === newUser.username)) {
+      alert("El nombre de usuario ya existe.");
+      return;
     }
+
+    setSystemUsers([...systemUsers, { ...newUser }]);
+    setNewUser({ username: '', password: '', role: 'operador' });
+    alert("Usuario creado exitosamente.");
   };
 
   const handleDeleteUser = (username: string) => {
@@ -704,29 +567,13 @@ const App: React.FC = () => {
         <div className="sticky top-4 z-20 flex flex-wrap justify-end mb-4 gap-3 bg-white/80 dark:bg-gray-900/80 backdrop-blur-md p-3 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-800">
           <div className="flex gap-2">
             <button
-              onClick={handleExportBudgetJSON}
-              title="Guardar presupuesto actual como archivo (Incluye mis datos y pagos)"
-              className="flex items-center justify-center gap-2 px-4 py-3 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 border border-indigo-100 dark:border-indigo-800 rounded-xl font-bold hover:bg-indigo-100 transition-all active:scale-95 text-sm"
+              onClick={handleSaveBudgetToDb}
+              title="Guardar presupuesto en la base de datos"
+              className="flex items-center justify-center gap-2 px-4 py-3 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border border-emerald-100 dark:border-emerald-800 rounded-xl font-bold hover:bg-emerald-100 transition-all active:scale-95 text-sm"
             >
-              <FileDown size={18} />
-              GUARDAR JSON
+              <Database size={18} />
+              GUARDAR DB
             </button>
-            <div className="relative group">
-              <input 
-                type="file" 
-                accept=".json" 
-                ref={budgetImportRef}
-                onChange={handleImportBudgetJSON} 
-                className="absolute inset-0 opacity-0 cursor-pointer z-10" 
-              />
-              <button
-                title="Cargar presupuesto desde archivo (Restaura mis datos y pagos)"
-                className="flex items-center justify-center gap-2 px-4 py-3 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-800 rounded-xl font-bold hover:bg-indigo-100 transition-all active:scale-95 text-sm"
-              >
-                <FileUp size={18} />
-                CARGAR JSON
-              </button>
-            </div>
           </div>
           <div className="h-10 w-[1px] bg-gray-200 dark:bg-gray-800 mx-1 self-center" />
           <button
@@ -851,6 +698,76 @@ const App: React.FC = () => {
           </section>
         )}
 
+        {/* Saved Budgets Section */}
+        <section className="bg-white dark:bg-gray-900 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-gray-800 overflow-hidden">
+          <div className="flex items-center justify-between gap-2 mb-4 border-b dark:border-gray-800 pb-4">
+            <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400">
+              <History size={20} />
+              <h2 className="text-lg font-semibold uppercase tracking-tight">Presupuestos Guardados (Base de Datos)</h2>
+            </div>
+            <button 
+              onClick={() => setIsBudgetsListExpanded(!isBudgetsListExpanded)}
+              className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-gray-400 dark:text-gray-500"
+            >
+              {isBudgetsListExpanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+            </button>
+          </div>
+
+          {isBudgetsListExpanded && (
+            <div className="animate-in fade-in duration-300">
+              {savedBudgets.length === 0 ? (
+                <div className="text-center py-8 text-gray-400 italic">
+                  No hay presupuestos guardados en la base de datos.
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead className="text-[10px] font-black text-gray-400 uppercase border-b dark:border-gray-800">
+                      <tr>
+                        <th className="pb-2"># Proforma</th>
+                        <th className="pb-2">Cliente</th>
+                        <th className="pb-2">Fecha</th>
+                        <th className="pb-2">Total</th>
+                        <th className="pb-2 text-right">Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y dark:divide-gray-800">
+                      {savedBudgets.map((b) => (
+                        <tr key={b.id} className="group hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
+                          <td className="py-3 font-bold text-indigo-600 dark:text-indigo-400">{b.metadata.proformaNumber || '---'}</td>
+                          <td className="py-3 text-gray-700 dark:text-gray-300">{b.client.companyName || 'Cliente Particular'}</td>
+                          <td className="py-3 text-gray-500">{b.metadata.date}</td>
+                          <td className="py-3 font-bold">
+                            {b.config.currency === 'USD' ? '$' : '₡'}
+                            {/* Simple calculation for display if totals not stored directly */}
+                            {b.items.reduce((acc: number, item: any) => acc + (Number(item.quantity) * Number(item.unitPrice)), 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                          </td>
+                          <td className="py-3 text-right space-x-2">
+                            <button 
+                              onClick={() => handleLoadBudgetFromDb(b)}
+                              className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                              title="Cargar presupuesto"
+                            >
+                              <Bookmark size={16} />
+                            </button>
+                            <button 
+                              onClick={() => handleDeleteBudgetFromDb(b.id)}
+                              className="p-1.5 text-red-400 hover:bg-red-50 rounded-lg transition-colors"
+                              title="Eliminar presupuesto"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+
         {/* Issuer Data Section */}
         <section className="bg-white dark:bg-gray-900 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-gray-800 overflow-hidden">
           <div className="flex items-center justify-between gap-2 mb-4 border-b dark:border-gray-800 pb-4">
@@ -871,50 +788,6 @@ const App: React.FC = () => {
                 {saveStatus === 'saved' ? <Check size={16} /> : <Save size={16} />}
                 {saveStatus === 'saved' ? '¡GUARDADO!' : 'GUARDAR DATOS'}
               </button>
-
-              <div className="h-4 w-[1px] bg-gray-200 dark:bg-gray-700 mx-1 hidden sm:block" />
-
-              <button 
-                onClick={handleExportIssuerJSON}
-                title="Descargar perfil como archivo JSON"
-                className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 text-xs font-black rounded-lg border border-blue-100 dark:border-blue-900/50 hover:bg-blue-100 transition-all"
-              >
-                <DownloadCloud size={16} />
-                PERFIL
-              </button>
-
-              <div className="relative group">
-                <input 
-                  type="file" 
-                  accept=".json" 
-                  ref={jsonImportRef}
-                  onChange={handleImportIssuerJSON} 
-                  className="absolute inset-0 opacity-0 cursor-pointer z-10" 
-                />
-                <button 
-                  title="Cargar perfil desde archivo JSON"
-                  className="flex items-center gap-2 px-3 py-1.5 bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 text-xs font-black rounded-lg border border-purple-100 dark:border-purple-900/50 hover:bg-purple-100 transition-all"
-                >
-                  <UploadCloud size={16} />
-                  IMPORTAR
-                </button>
-              </div>
-              
-              <div className="relative group">
-                <input 
-                  type="file" 
-                  accept=".csv" 
-                  ref={csvInputRef}
-                  onChange={handleCsvUpload} 
-                  className="absolute inset-0 opacity-0 cursor-pointer z-10" 
-                />
-                <button 
-                  className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 text-xs font-black rounded-lg border border-emerald-100 dark:border-emerald-900/50 hover:bg-emerald-100 transition-all"
-                >
-                  <FileSpreadsheet size={16} />
-                  CSV
-                </button>
-              </div>
 
               <button 
                 onClick={() => setIsIssuerExpanded(!isIssuerExpanded)}
