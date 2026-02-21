@@ -28,15 +28,15 @@ const CR_BANKS = [
 
 const App: React.FC = () => {
   // Users List State (initialized with default credentials)
-  const [systemUsers, setSystemUsers] = useState<UserCredential[]>(() => {
-    const saved = localStorage.getItem('pqmaker_users');
-    return saved ? JSON.parse(saved) : VALID_CREDENTIALS;
-  });
+  const [systemUsers, setSystemUsers] = useState<UserCredential[]>([]);
 
-  // Persist users to localStorage
+  // Load users from API
   useEffect(() => {
-    localStorage.setItem('pqmaker_users', JSON.stringify(systemUsers));
-  }, [systemUsers]);
+    fetch('/api/users')
+      .then(res => res.json())
+      .then(data => setSystemUsers(data))
+      .catch(err => console.error("Error loading users:", err));
+  }, []);
 
   // Authentication State
   const [currentUser, setCurrentUser] = useState<UserCredential | null>(() => {
@@ -80,28 +80,37 @@ const App: React.FC = () => {
   }, []);
 
   // Issuer State
-  const [issuer, setIssuer] = useState<CompanyData>(() => getInitialIssuer(currentUser?.username));
+  const [issuer, setIssuer] = useState<CompanyData>(COMPANY_CONFIG);
 
-  // Effect to load user-specific issuer data when user changes
+  // Effect to load user-specific data when user changes
   useEffect(() => {
     if (currentUser) {
-      setIssuer(getInitialIssuer(currentUser.username));
+      // Load Issuer
+      fetch(`/api/issuer/${currentUser.username}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data && data.name) setIssuer(data);
+        })
+        .catch(err => console.error("Error loading issuer:", err));
     }
-  }, [currentUser?.username, getInitialIssuer]);
+  }, [currentUser?.username]);
 
   // Manual save handler for issuer data
-  const handleSaveIssuer = () => {
-    if (issuer) {
-      // Save to global fallback
-      localStorage.setItem('pqmaker_global_issuer', JSON.stringify(issuer));
-      
-      // Save user-specific
-      if (currentUser) {
-        localStorage.setItem(`pqmaker_issuer_${currentUser.username}`, JSON.stringify(issuer));
+  const handleSaveIssuer = async () => {
+    if (issuer && currentUser) {
+      try {
+        const res = await fetch(`/api/issuer/${currentUser.username}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(issuer)
+        });
+        if (res.ok) {
+          setSaveStatus('saved');
+          setTimeout(() => setSaveStatus('idle'), 2000);
+        }
+      } catch (err) {
+        console.error("Error saving issuer:", err);
       }
-      
-      setSaveStatus('saved');
-      setTimeout(() => setSaveStatus('idle'), 2000);
     }
   };
 
@@ -180,6 +189,60 @@ const App: React.FC = () => {
     currency: 'CRC',
     exchangeRate: 515.00 
   });
+
+  // Saved Budgets and Clients State
+  const [savedBudgets, setSavedBudgets] = useState<Record<string, CompleteBudget>>({});
+  const [savedClients, setSavedClients] = useState<Record<string, ClientData>>({});
+
+  // Load user data (Budgets and Clients)
+  useEffect(() => {
+    if (currentUser) {
+      // Load Budgets
+      fetch(`/api/budgets/${currentUser.username}`)
+        .then(res => res.json())
+        .then(data => setSavedBudgets(data))
+        .catch(err => console.error("Error loading budgets:", err));
+
+      // Load Clients
+      fetch(`/api/clients/${currentUser.username}`)
+        .then(res => res.json())
+        .then(data => setSavedClients(data))
+        .catch(err => console.error("Error loading clients:", err));
+    }
+  }, [currentUser?.username]);
+
+  // Save Budget to Database
+  const handleSaveBudgetToDb = async () => {
+    if (!currentUser) return;
+    
+    const completeBudget: CompleteBudget = {
+      metadata: docMetadata,
+      client: client,
+      items: items,
+      config: config,
+      offerConditions: offerConditions,
+      issuer: issuer,
+      version: '1.0.1'
+    };
+
+    try {
+      const res = await fetch(`/api/budgets/${currentUser.username}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(completeBudget)
+      });
+      const data = await res.json();
+      if (data.success) {
+        // Refresh budgets
+        const budgetsRes = await fetch(`/api/budgets/${currentUser.username}`);
+        const budgetsData = await budgetsRes.json();
+        setSavedBudgets(budgetsData);
+        alert("Presupuesto guardado en la base de datos.");
+      }
+    } catch (err) {
+      console.error("Error saving budget to DB:", err);
+    }
+  };
 
   // EXPORT COMPLETE BUDGET
   const handleExportBudgetJSON = () => {
@@ -334,16 +397,24 @@ const App: React.FC = () => {
   };
 
   // Login Handler
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    const userMatch = systemUsers.find(
-      c => c.username === loginUser && c.password === loginPass
-    );
-    if (userMatch) {
-      setCurrentUser(userMatch);
-      setLoginError(false);
-      sessionStorage.setItem('pqmaker_current_user', JSON.stringify(userMatch));
-    } else {
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: loginUser, password: loginPass })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setCurrentUser(data.user);
+        setLoginError(false);
+        sessionStorage.setItem('pqmaker_current_user', JSON.stringify(data.user));
+      } else {
+        setLoginError(true);
+      }
+    } catch (err) {
+      console.error("Login error:", err);
       setLoginError(true);
     }
   };
@@ -353,22 +424,31 @@ const App: React.FC = () => {
     sessionStorage.removeItem('pqmaker_current_user');
     setLoginUser('');
     setLoginPass('');
-    setIssuer(getInitialIssuer());
+    setIssuer(COMPANY_CONFIG);
   };
 
   // Admin User Management
-  const handleCreateUser = (e: React.FormEvent) => {
+  const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newUser.username || !newUser.password) return;
     
-    if (systemUsers.find(u => u.username === newUser.username)) {
-      alert("El nombre de usuario ya existe.");
-      return;
+    try {
+      const res = await fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newUser)
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSystemUsers(data.users);
+        setNewUser({ username: '', password: '', role: 'operador' });
+        alert("Usuario creado exitosamente.");
+      } else {
+        alert(data.message);
+      }
+    } catch (err) {
+      console.error("Error creating user:", err);
     }
-
-    setSystemUsers([...systemUsers, { ...newUser }]);
-    setNewUser({ username: '', password: '', role: 'operador' });
-    alert("Usuario creado exitosamente.");
   };
 
   const handleDeleteUser = (username: string) => {
