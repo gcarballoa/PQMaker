@@ -56,6 +56,8 @@ const App: React.FC = () => {
   const [userToDelete, setUserToDelete] = useState<string | null>(null);
   const [userToUpdatePassword, setUserToUpdatePassword] = useState<string | null>(null);
   const [newPasswordValue, setNewPasswordValue] = useState('');
+  const [budgetToDelete, setBudgetToDelete] = useState<string | null>(null);
+  const [isClearBudgetConfirmOpen, setIsClearBudgetConfirmOpen] = useState(false);
 
   // Refs for focus management
   const addItemBtnRef = useRef<HTMLButtonElement>(null);
@@ -179,17 +181,22 @@ const App: React.FC = () => {
     alert("Presupuesto cargado.");
   };
 
-  const handleDeleteBudgetFromDb = async (id: string) => {
+  const handleDeleteBudgetFromDb = (id: string) => {
     if (!currentUser) return;
-    if (!window.confirm("¿Seguro que deseas eliminar este presupuesto?")) return;
+    setBudgetToDelete(id);
+  };
+
+  const confirmDeleteBudget = async () => {
+    if (!currentUser || !budgetToDelete) return;
 
     try {
-      const response = await fetch(`/api/budgets/${currentUser.username}/${id}`, {
+      const response = await fetch(`/api/budgets/${currentUser.username}/${budgetToDelete}`, {
         method: 'DELETE'
       });
 
       if (response.ok) {
         fetchSavedBudgets(currentUser.username);
+        setBudgetToDelete(null);
       }
     } catch (error) {
       console.error("Error deleting budget:", error);
@@ -237,6 +244,47 @@ const App: React.FC = () => {
     currency: 'CRC',
     exchangeRate: 515.00 
   });
+
+  // Reset Budget Form Utility
+  const resetBudgetForm = useCallback(() => {
+    const today = new Date();
+    const expiry = new Date();
+    expiry.setDate(today.getDate() + 30);
+    
+    setDocMetadata({
+      proformaNumber: '',
+      date: today.toISOString().split('T')[0],
+      expiryDate: expiry.toISOString().split('T')[0],
+      vendor: ''
+    });
+    
+    setClient({
+      companyName: '',
+      companyPhone: '',
+      companyEmail: '',
+      contactName: '',
+      contactPhone: '',
+      contactEmail: ''
+    });
+    
+    setItems([
+      { id: crypto.randomUUID(), code: '', quantity: '', description: '', unitPrice: '' }
+    ]);
+    
+    setConfig({
+      discountPercent: '',
+      taxPercent: 13,
+      currency: 'CRC',
+      exchangeRate: 515.00 
+    });
+
+    setOfferConditions({
+      validezDias: 30,
+      tiempoEntrega: '3-5 días hábiles',
+      garantia: '1 año contra defectos de fábrica',
+      condicionesPago: 'Contado'
+    });
+  }, []);
 
   // Phone Formatter Utility
   const formatPhone = (val: string) => {
@@ -289,6 +337,7 @@ const App: React.FC = () => {
       setCurrentUser(userMatch);
       setLoginError(false);
       sessionStorage.setItem('pqmaker_current_user', JSON.stringify(userMatch));
+      resetBudgetForm();
     } else {
       setLoginError(true);
     }
@@ -300,6 +349,7 @@ const App: React.FC = () => {
     setLoginUser('');
     setLoginPass('');
     setIssuer(getInitialIssuer());
+    resetBudgetForm();
   };
 
   // Admin User Management
@@ -387,50 +437,53 @@ const App: React.FC = () => {
   };
 
   const handleClearBudget = () => {
-    if (window.confirm("¿Está seguro de que desea limpiar el presupuesto actual? Se restablecerán los datos del cliente, ajustes finales e ítems. Se conservarán los datos del emisor y métodos de pago.")) {
-      const today = new Date();
-      const expiry = new Date();
-      expiry.setDate(today.getDate() + 30);
-      
-      // Reseteo de Información del Documento
-      setDocMetadata({
-        proformaNumber: '',
-        date: today.toISOString().split('T')[0],
-        expiryDate: expiry.toISOString().split('T')[0],
-        vendor: ''
-      });
+    setIsClearBudgetConfirmOpen(true);
+  };
 
-      // Reseteo de Datos del Cliente
-      setClient({
-        companyName: '',
-        companyPhone: '',
-        companyEmail: '',
-        contactName: '',
-        contactPhone: '',
-        contactEmail: ''
-      });
+  const confirmClearBudget = () => {
+    const today = new Date();
+    const expiry = new Date();
+    expiry.setDate(today.getDate() + 30);
+    
+    // Reseteo de Información del Documento
+    setDocMetadata({
+      proformaNumber: '',
+      date: today.toISOString().split('T')[0],
+      expiryDate: expiry.toISOString().split('T')[0],
+      vendor: ''
+    });
 
-      // Reseteo de Ítems (Elimina líneas y deja una vacía)
-      setItems([{ id: crypto.randomUUID(), code: '', quantity: '', description: '', unitPrice: '' }]);
+    // Reseteo de Datos del Cliente
+    setClient({
+      companyName: '',
+      companyPhone: '',
+      companyEmail: '',
+      contactName: '',
+      contactPhone: '',
+      contactEmail: ''
+    });
 
-      // Reseteo de Ajustes Finales
-      setConfig({
-        discountPercent: '',
-        taxPercent: 13,
-        currency: 'CRC',
-        exchangeRate: 515.00
-      });
+    // Reseteo de Ítems (Elimina líneas y deja una vacía)
+    setItems([{ id: crypto.randomUUID(), code: '', quantity: '', description: '', unitPrice: '' }]);
 
-      // Reseteo de Condiciones de Oferta (Opcional, pero recomendado para consistencia)
-      setOfferConditions({
-        validezDias: 30,
-        tiempoEntrega: '3-5 días hábiles',
-        garantia: '1 año contra defectos de fábrica',
-        condicionesPago: 'Contado'
-      });
+    // Reseteo de Ajustes Finales
+    setConfig({
+      discountPercent: '',
+      taxPercent: 13,
+      currency: 'CRC',
+      exchangeRate: 515.00
+    });
 
-      alert("Presupuesto restablecido correctamente.");
-    }
+    // Reseteo de Condiciones de Oferta (Opcional, pero recomendado para consistencia)
+    setOfferConditions({
+      validezDias: 30,
+      tiempoEntrega: '3-5 días hábiles',
+      garantia: '1 año contra defectos de fábrica',
+      condicionesPago: 'Contado'
+    });
+
+    setIsClearBudgetConfirmOpen(false);
+    alert("Presupuesto restablecido correctamente.");
   };
 
   const rate = Number(config.exchangeRate) || 1;
@@ -791,6 +844,62 @@ const App: React.FC = () => {
                   className="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white font-bold text-sm hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-600/20 disabled:opacity-50"
                 >
                   ACTUALIZAR
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {budgetToDelete && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+            <div className="bg-white dark:bg-gray-900 rounded-2xl p-6 max-w-sm w-full shadow-2xl border border-gray-100 dark:border-gray-800 animate-in zoom-in duration-200">
+              <div className="flex items-center gap-3 text-red-500 mb-4">
+                <AlertCircle size={24} />
+                <h3 className="text-lg font-bold uppercase tracking-tight">Eliminar Presupuesto</h3>
+              </div>
+              <p className="text-gray-600 dark:text-gray-400 text-sm mb-6">
+                ¿Está seguro que desea eliminar este presupuesto de la base de datos? Esta acción no se puede deshacer.
+              </p>
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => setBudgetToDelete(null)}
+                  className="flex-1 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 font-bold text-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                >
+                  CANCELAR
+                </button>
+                <button 
+                  onClick={confirmDeleteBudget}
+                  className="flex-1 py-2.5 rounded-xl bg-red-600 text-white font-bold text-sm hover:bg-red-700 transition-colors shadow-lg shadow-red-600/20"
+                >
+                  ELIMINAR
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {isClearBudgetConfirmOpen && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+            <div className="bg-white dark:bg-gray-900 rounded-2xl p-6 max-w-md w-full shadow-2xl border border-gray-100 dark:border-gray-800 animate-in zoom-in duration-200">
+              <div className="flex items-center gap-3 text-amber-500 mb-4">
+                <Eraser size={24} />
+                <h3 className="text-lg font-bold uppercase tracking-tight">Limpiar Formulario</h3>
+              </div>
+              <p className="text-gray-600 dark:text-gray-400 text-sm mb-6">
+                ¿Está seguro de que desea limpiar el presupuesto actual? Se restablecerán los datos del cliente, ajustes finales e ítems. <span className="font-bold">Se conservarán los datos del emisor y métodos de pago.</span>
+              </p>
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => setIsClearBudgetConfirmOpen(false)}
+                  className="flex-1 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 font-bold text-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                >
+                  CANCELAR
+                </button>
+                <button 
+                  onClick={confirmClearBudget}
+                  className="flex-1 py-2.5 rounded-xl bg-amber-600 text-white font-bold text-sm hover:bg-amber-700 transition-colors shadow-lg shadow-amber-600/20"
+                >
+                  LIMPIAR TODO
                 </button>
               </div>
             </div>
