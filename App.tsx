@@ -6,7 +6,7 @@ import {
   ChevronDown, ChevronUp, AlertCircle, LogOut, Lock, User as UserIcon,
   Users, ShieldCheck, UserPlus, Upload, FileSpreadsheet, Info, Save, Check,
   FilePlus, Eraser, DownloadCloud, UploadCloud, FileUp, FileDown, Database,
-  History, Bookmark
+  History, Bookmark, Key
 } from 'lucide-react';
 import { ClientData, BudgetItem, BudgetConfig, CompanyData, DocumentMetadata, OfferConditions, CompleteBudget } from './types';
 import { COMPANY_CONFIG, FOOTER_CONFIG } from './constants';
@@ -53,6 +53,9 @@ const App: React.FC = () => {
   // New User Form State (Admin only)
   const [newUser, setNewUser] = useState({ username: '', password: '', role: 'operador' as UserRole });
   const [isUsersExpanded, setIsUsersExpanded] = useState(false);
+  const [userToDelete, setUserToDelete] = useState<string | null>(null);
+  const [userToUpdatePassword, setUserToUpdatePassword] = useState<string | null>(null);
+  const [newPasswordValue, setNewPasswordValue] = useState('');
 
   // Refs for focus management
   const addItemBtnRef = useRef<HTMLButtonElement>(null);
@@ -319,8 +322,29 @@ const App: React.FC = () => {
       alert("No puedes eliminar tu propio usuario.");
       return;
     }
-    if (window.confirm(`¿Seguro que deseas eliminar al usuario ${username}?`)) {
-      setSystemUsers(systemUsers.filter(u => u.username !== username));
+    setUserToDelete(username);
+  };
+
+  const confirmDeleteUser = () => {
+    if (userToDelete) {
+      setSystemUsers(systemUsers.filter(u => u.username !== userToDelete));
+      setUserToDelete(null);
+    }
+  };
+
+  const handleUpdatePassword = (username: string) => {
+    setUserToUpdatePassword(username);
+    setNewPasswordValue('');
+  };
+
+  const confirmUpdatePassword = () => {
+    if (userToUpdatePassword && newPasswordValue.trim() !== "") {
+      setSystemUsers(systemUsers.map(u => 
+        u.username === userToUpdatePassword ? { ...u, password: newPasswordValue } : u
+      ));
+      setUserToUpdatePassword(null);
+      setNewPasswordValue('');
+      alert("Contraseña actualizada exitosamente.");
     }
   };
 
@@ -678,11 +702,19 @@ const App: React.FC = () => {
                                 {u.role}
                               </span>
                             </td>
-                            <td className="py-2 text-right">
+                            <td className="py-2 text-right space-x-2">
+                              <button 
+                                onClick={() => handleUpdatePassword(u.username)}
+                                className="text-gray-300 hover:text-indigo-500 transition-colors"
+                                title="Cambiar Contraseña"
+                              >
+                                <Key size={14} />
+                              </button>
                               <button 
                                 onClick={() => handleDeleteUser(u.username)}
                                 disabled={u.username === currentUser?.username}
                                 className="text-gray-300 hover:text-red-500 transition-colors disabled:opacity-0"
+                                title="Eliminar Usuario"
                               >
                                 <Trash2 size={14} />
                               </button>
@@ -698,75 +730,72 @@ const App: React.FC = () => {
           </section>
         )}
 
-        {/* Saved Budgets Section */}
-        <section className="bg-white dark:bg-gray-900 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-gray-800 overflow-hidden">
-          <div className="flex items-center justify-between gap-2 mb-4 border-b dark:border-gray-800 pb-4">
-            <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400">
-              <History size={20} />
-              <h2 className="text-lg font-semibold uppercase tracking-tight">Presupuestos Guardados (Base de Datos)</h2>
+        {/* Custom Modals for User Management */}
+        {userToDelete && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+            <div className="bg-white dark:bg-gray-900 rounded-2xl p-6 max-w-sm w-full shadow-2xl border border-gray-100 dark:border-gray-800 animate-in zoom-in duration-200">
+              <div className="flex items-center gap-3 text-red-500 mb-4">
+                <AlertCircle size={24} />
+                <h3 className="text-lg font-bold uppercase tracking-tight">Confirmar Eliminación</h3>
+              </div>
+              <p className="text-gray-600 dark:text-gray-400 text-sm mb-6">
+                ¿Está seguro que desea eliminar al usuario <span className="font-bold text-gray-900 dark:text-white">{userToDelete}</span>? Esta acción no se puede deshacer.
+              </p>
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => setUserToDelete(null)}
+                  className="flex-1 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 font-bold text-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                >
+                  CANCELAR
+                </button>
+                <button 
+                  onClick={confirmDeleteUser}
+                  className="flex-1 py-2.5 rounded-xl bg-red-600 text-white font-bold text-sm hover:bg-red-700 transition-colors shadow-lg shadow-red-600/20"
+                >
+                  ELIMINAR
+                </button>
+              </div>
             </div>
-            <button 
-              onClick={() => setIsBudgetsListExpanded(!isBudgetsListExpanded)}
-              className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-gray-400 dark:text-gray-500"
-            >
-              {isBudgetsListExpanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
-            </button>
           </div>
+        )}
 
-          {isBudgetsListExpanded && (
-            <div className="animate-in fade-in duration-300">
-              {savedBudgets.length === 0 ? (
-                <div className="text-center py-8 text-gray-400 italic">
-                  No hay presupuestos guardados en la base de datos.
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-sm">
-                    <thead className="text-[10px] font-black text-gray-400 uppercase border-b dark:border-gray-800">
-                      <tr>
-                        <th className="pb-2"># Proforma</th>
-                        <th className="pb-2">Cliente</th>
-                        <th className="pb-2">Fecha</th>
-                        <th className="pb-2">Total</th>
-                        <th className="pb-2 text-right">Acciones</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y dark:divide-gray-800">
-                      {savedBudgets.map((b) => (
-                        <tr key={b.id} className="group hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
-                          <td className="py-3 font-bold text-indigo-600 dark:text-indigo-400">{b.metadata.proformaNumber || '---'}</td>
-                          <td className="py-3 text-gray-700 dark:text-gray-300">{b.client.companyName || 'Cliente Particular'}</td>
-                          <td className="py-3 text-gray-500">{b.metadata.date}</td>
-                          <td className="py-3 font-bold">
-                            {b.config.currency === 'USD' ? '$' : '₡'}
-                            {/* Simple calculation for display if totals not stored directly */}
-                            {b.items.reduce((acc: number, item: any) => acc + (Number(item.quantity) * Number(item.unitPrice)), 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                          </td>
-                          <td className="py-3 text-right space-x-2">
-                            <button 
-                              onClick={() => handleLoadBudgetFromDb(b)}
-                              className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
-                              title="Cargar presupuesto"
-                            >
-                              <Bookmark size={16} />
-                            </button>
-                            <button 
-                              onClick={() => handleDeleteBudgetFromDb(b.id)}
-                              className="p-1.5 text-red-400 hover:bg-red-50 rounded-lg transition-colors"
-                              title="Eliminar presupuesto"
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+        {userToUpdatePassword && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+            <div className="bg-white dark:bg-gray-900 rounded-2xl p-6 max-w-sm w-full shadow-2xl border border-gray-100 dark:border-gray-800 animate-in zoom-in duration-200">
+              <div className="flex items-center gap-3 text-indigo-600 dark:text-indigo-400 mb-4">
+                <Key size={24} />
+                <h3 className="text-lg font-bold uppercase tracking-tight">Cambiar Contraseña</h3>
+              </div>
+              <p className="text-gray-600 dark:text-gray-400 text-sm mb-4">
+                Ingrese la nueva contraseña para <span className="font-bold text-gray-900 dark:text-white">{userToUpdatePassword}</span>:
+              </p>
+              <input 
+                type="password"
+                autoFocus
+                className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 dark:bg-gray-800 dark:text-white mb-6 outline-none focus:ring-2 focus:ring-indigo-500"
+                placeholder="Nueva contraseña"
+                value={newPasswordValue}
+                onChange={(e) => setNewPasswordValue(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && confirmUpdatePassword()}
+              />
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => setUserToUpdatePassword(null)}
+                  className="flex-1 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 font-bold text-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                >
+                  CANCELAR
+                </button>
+                <button 
+                  onClick={confirmUpdatePassword}
+                  disabled={!newPasswordValue.trim()}
+                  className="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white font-bold text-sm hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-600/20 disabled:opacity-50"
+                >
+                  ACTUALIZAR
+                </button>
+              </div>
             </div>
-          )}
-        </section>
+          </div>
+        )}
 
         {/* Issuer Data Section */}
         <section className="bg-white dark:bg-gray-900 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-gray-800 overflow-hidden">
@@ -871,6 +900,86 @@ const App: React.FC = () => {
                   </div>
                 </div>
               </div>
+            </div>
+          )}
+        </section>
+
+        <div className="mt-12 mb-6 border-b-2 border-indigo-500 pb-2">
+          <h2 className="text-2xl font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest flex items-center gap-3">
+            <FilePlus size={28} />
+            CONFECCIÓN DEL PRESUPUESTO
+          </h2>
+          <p className="text-gray-500 dark:text-gray-400 text-sm font-medium mt-1">
+            Complete los campos a continuación para generar su documento profesional.
+          </p>
+        </div>
+
+        {/* Saved Budgets Section */}
+        <section className="bg-white dark:bg-gray-900 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-gray-800 overflow-hidden">
+          <div className="flex items-center justify-between gap-2 mb-4 border-b dark:border-gray-800 pb-4">
+            <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400">
+              <History size={20} />
+              <h2 className="text-lg font-semibold uppercase tracking-tight">Presupuestos Guardados (Base de Datos)</h2>
+            </div>
+            <button 
+              onClick={() => setIsBudgetsListExpanded(!isBudgetsListExpanded)}
+              className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-gray-400 dark:text-gray-500"
+            >
+              {isBudgetsListExpanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+            </button>
+          </div>
+
+          {isBudgetsListExpanded && (
+            <div className="animate-in fade-in duration-300">
+              {savedBudgets.length === 0 ? (
+                <div className="text-center py-8 text-gray-400 italic">
+                  No hay presupuestos guardados en la base de datos.
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead className="text-[10px] font-black text-gray-400 uppercase border-b dark:border-gray-800">
+                      <tr>
+                        <th className="pb-2"># Proforma</th>
+                        <th className="pb-2">Cliente</th>
+                        <th className="pb-2">Fecha</th>
+                        <th className="pb-2">Total</th>
+                        <th className="pb-2 text-right">Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y dark:divide-gray-800">
+                      {savedBudgets.map((b) => (
+                        <tr key={b.id} className="group hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
+                          <td className="py-3 font-bold text-indigo-600 dark:text-indigo-400">{b.metadata.proformaNumber || '---'}</td>
+                          <td className="py-3 text-gray-700 dark:text-gray-300">{b.client.companyName || 'Cliente Particular'}</td>
+                          <td className="py-3 text-gray-500">{b.metadata.date}</td>
+                          <td className="py-3 font-bold">
+                            {b.config.currency === 'USD' ? '$' : '₡'}
+                            {/* Simple calculation for display if totals not stored directly */}
+                            {b.items.reduce((acc: number, item: any) => acc + (Number(item.quantity) * Number(item.unitPrice)), 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                          </td>
+                          <td className="py-3 text-right space-x-2">
+                            <button 
+                              onClick={() => handleLoadBudgetFromDb(b)}
+                              className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                              title="Cargar presupuesto"
+                            >
+                              <Bookmark size={16} />
+                            </button>
+                            <button 
+                              onClick={() => handleDeleteBudgetFromDb(b.id)}
+                              className="p-1.5 text-red-400 hover:bg-red-50 rounded-lg transition-colors"
+                              title="Eliminar presupuesto"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           )}
         </section>
