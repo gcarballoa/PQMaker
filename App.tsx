@@ -245,6 +245,10 @@ const App: React.FC = () => {
     exchangeRate: 515.00 
   });
 
+  const [autoIncrementCodes, setAutoIncrementCodes] = useState(false);
+  const [codePrefix, setCodePrefix] = useState('ITEM-');
+  const [nextCodeNumber, setNextCodeNumber] = useState(1);
+
   // Reset Budget Form Utility
   const resetBudgetForm = useCallback(() => {
     const today = new Date();
@@ -284,6 +288,8 @@ const App: React.FC = () => {
       garantia: '1 año contra defectos de fábrica',
       condicionesPago: 'Contado'
     });
+
+    setNextCodeNumber(1);
   }, []);
 
   // Phone Formatter Utility
@@ -423,7 +429,12 @@ const App: React.FC = () => {
   };
 
   const handleAddItem = () => {
-    setItems([...items, { id: crypto.randomUUID(), code: '', quantity: '', description: '', unitPrice: '' }]);
+    let newCode = '';
+    if (autoIncrementCodes) {
+      newCode = `${codePrefix}${String(nextCodeNumber).padStart(3, '0')}`;
+      setNextCodeNumber(prev => prev + 1);
+    }
+    setItems([...items, { id: crypto.randomUUID(), code: newCode, quantity: '', description: '', unitPrice: '' }]);
   };
 
   const handleRemoveItem = (id: string) => {
@@ -1188,6 +1199,62 @@ const App: React.FC = () => {
           )}
         </section>
 
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+          <div className="bg-white dark:bg-gray-900 p-4 rounded-xl shadow-sm border border-gray-100 dark:border-gray-800 flex items-center justify-between gap-4">
+            <div className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400">
+              <RefreshCcw size={18} />
+              <span className="text-xs font-bold uppercase tracking-wider">Moneda del Documento</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="flex rounded-lg border border-indigo-100 dark:border-indigo-900/50 overflow-hidden h-9">
+                <button onClick={() => setConfig({ ...config, currency: 'CRC' })} className={`px-4 text-xs font-bold transition-colors ${config.currency === 'CRC' ? 'bg-indigo-600 dark:bg-indigo-500 text-white' : 'bg-white dark:bg-gray-800 text-indigo-600 dark:text-indigo-400'}`}>CRC (₡)</button>
+                <button onClick={() => setConfig({ ...config, currency: 'USD' })} className={`px-4 text-xs font-bold transition-colors ${config.currency === 'USD' ? 'bg-indigo-600 dark:bg-indigo-500 text-white' : 'bg-white dark:bg-gray-800 text-indigo-600 dark:text-indigo-400'}`}>USD ($)</button>
+              </div>
+              {isUSD && <input type="number" step="0.01" className="w-24 px-3 py-1.5 text-xs rounded-lg border border-indigo-100 dark:border-indigo-900/50 dark:bg-gray-800 dark:text-white font-bold outline-none focus:ring-2 focus:ring-indigo-500" value={config.exchangeRate} onChange={(e) => setConfig({ ...config, exchangeRate: e.target.value })} />}
+            </div>
+          </div>
+
+          <div className="bg-white dark:bg-gray-900 p-4 rounded-xl shadow-sm border border-gray-100 dark:border-gray-800 flex items-center gap-4">
+            <div className="flex items-center gap-3 flex-1">
+              <input 
+                type="checkbox" 
+                id="autoIncrement"
+                className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500 cursor-pointer"
+                checked={autoIncrementCodes}
+                onChange={(e) => {
+                  const checked = e.target.checked;
+                  setAutoIncrementCodes(checked);
+                  if (checked) {
+                    let currentNext = nextCodeNumber;
+                    const updatedItems = items.map(item => {
+                      if (!item.code.trim()) {
+                        const code = `${codePrefix}${String(currentNext).padStart(3, '0')}`;
+                        currentNext++;
+                        return { ...item, code };
+                      }
+                      return item;
+                    });
+                    setItems(updatedItems);
+                    setNextCodeNumber(currentNext);
+                  }
+                }}
+              />
+              <label htmlFor="autoIncrement" className="text-xs font-bold text-gray-600 dark:text-gray-400 uppercase cursor-pointer whitespace-nowrap">
+                Auto-incrementar códigos
+              </label>
+              {autoIncrementCodes && (
+                <input 
+                  type="text" 
+                  className="w-24 px-3 py-1.5 text-xs font-bold border border-gray-200 dark:border-gray-700 dark:bg-gray-800 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 ml-auto"
+                  placeholder="Prefijo"
+                  value={codePrefix}
+                  onChange={(e) => setCodePrefix(e.target.value)}
+                />
+              )}
+            </div>
+          </div>
+        </div>
+
         <section className="bg-white dark:bg-gray-900 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-gray-800 overflow-x-auto">
           <div className="flex items-center gap-2 mb-6 border-b dark:border-gray-800 pb-4 text-indigo-600 dark:text-indigo-400">
             <FileText size={20} />
@@ -1255,18 +1322,6 @@ const App: React.FC = () => {
                 <div>
                   <label className="block text-xs font-bold text-gray-400 dark:text-gray-500 uppercase mb-1">IVA (%)</label>
                   <input type="number" className={`${inputBaseClass} border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-white focus:ring-indigo-500`} value={config.taxPercent} onChange={(e) => setConfig({ ...config, taxPercent: e.target.value })} />
-                </div>
-              </div>
-              <div className="p-4 bg-indigo-50 dark:bg-indigo-900/10 rounded-xl border border-indigo-100 dark:border-indigo-900/30">
-                <div className="flex items-center gap-2 mb-3 text-indigo-700 dark:text-indigo-400">
-                  <RefreshCcw size={16} /><span className="text-xs font-bold uppercase">Moneda</span>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="flex rounded-lg border border-indigo-200 dark:border-indigo-900/50 overflow-hidden">
-                    <button onClick={() => setConfig({ ...config, currency: 'CRC' })} className={`flex-1 py-1 text-xs font-bold transition-colors ${config.currency === 'CRC' ? 'bg-indigo-600 dark:bg-indigo-500 text-white' : 'bg-white dark:bg-gray-800 text-indigo-600 dark:text-indigo-400'}`}>CRC (₡)</button>
-                    <button onClick={() => setConfig({ ...config, currency: 'USD' })} className={`flex-1 py-1 text-xs font-bold transition-colors ${config.currency === 'USD' ? 'bg-indigo-600 dark:bg-indigo-500 text-white' : 'bg-white dark:bg-gray-800 text-indigo-600 dark:text-indigo-400'}`}>USD ($)</button>
-                  </div>
-                  {isUSD && <input type="number" step="0.01" className="w-full px-3 py-1 text-xs rounded border border-indigo-200 dark:border-indigo-900/50 dark:bg-gray-800 dark:text-white font-bold" value={config.exchangeRate} onChange={(e) => setConfig({ ...config, exchangeRate: e.target.value })} />}
                 </div>
               </div>
             </div>
